@@ -10,8 +10,7 @@
 I constructed a longitudinal dataset of reward-based crowdfunding campaigns on Wadiz, a major crowdfunding platform in South Korea, using Python.
 
 The data collection pipeline combined API requests and web scraping to link campaign and creator information across multiple sources, including campaign histories, campaign characteristics, engagement measures, and award information.
-
-**Pipeline:** Campaign Listings → Creator Identification → Campaign Histories → Campaign Characteristics & Engagement → Award Information → Analysis-Ready Dataset
+![Data Collection and Construction Pipeline](assets/data_collection_pipeline.svg)
 
 **Tools:** Python, Requests, BeautifulSoup, Pandas, REST APIs, HTML Parsing
 
