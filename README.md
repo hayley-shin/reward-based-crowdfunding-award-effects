@@ -11,6 +11,7 @@ I constructed a longitudinal dataset of reward-based crowdfunding campaigns on W
 
 The data collection pipeline combined API requests and web scraping to link campaign and creator information across multiple sources, including campaign histories, campaign characteristics, engagement measures, and award information.
 
+
 ![Data Collection and Construction Pipeline](assets/data_collection_pipeline.png)
 
 **Tools:** Python, Requests, BeautifulSoup, Pandas, REST APIs, HTML Parsing
