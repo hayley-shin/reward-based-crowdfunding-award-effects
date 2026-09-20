@@ -1,0 +1,347 @@
+---
+title: "Parallel Trend Visualization"
+output: html_document
+---
+
+```{r 1. libraries}
+library(dplyr)
+library(lubridate)
+library(tidyverse)
+library(readr)
+library(MatchIt) # 매칭 함수
+library(plm)
+library(moonBook)
+library(ggplot2)
+library(fixest)
+library(haven)
+library(dplyr)
+library(ggplot2)
+
+matched_df3 <- read_csv("matched_12345.csv")
+```
+
+```{r 2. Making the Function for Getting the Days}
+# 여기부터 그냥 다 실행
+month_day <- c(31,28,31,30,31,30,31,31,30,31,30,31)
+
+checkLeap <- function(year) {
+  isLeap <- 0
+  if((year%%4 == 0 && year%%100 != 0) || year%%400 == 0) {
+    isLeap <- 1
+  }
+  return(isLeap)
+}
+
+
+get_totalDays <- function(year, month, day) {
+  total_day <- 0
+  previous_year <- year-1
+  total_day <- previous_year*365 + (previous_year %/% 4 - previous_year %/%100 + previous_year%/%400)
+  
+  if(month != 1) {
+    for(i in 1:(month-1)) {
+      total_day <- total_day + month_day[i]
+    }
+  }
+  
+  if(month >= 3 && checkLeap(year)) {
+    total_day <- total_day + 1
+  }
+  
+  total_day <- total_day + day
+  
+  return(total_day)
+}
+```
+
+
+```{r 2. Get Days}
+
+matched_df$Date <- as.Date(matched_df$Date)
+matched_df$Date <- ymd(matched_df$Date)
+
+matched_df %>%
+  select(Date) %>% unique() %>% arrange(Date) %>%
+  mutate(
+    treatment_date = ymd("2021-12-09"),
+    days = get_totalDays(year(Date), month(Date), day(Date)),
+    treatment_days = get_totalDays(year(treatment_date), month(treatment_date), day(treatment_date)),
+    days = days-treatment_days
+  ) %>%
+  select(Date, days) -> matched_df2
+
+matched_df3 <- merge(matched_df, matched_df2, by='Date')
+head(matched_df3)
+
+### 이 작업은 코드가 오래 돌아감
+
+matched_df %>%
+  # 패널데이터에서 id, time이 있는데 아래 submitDate자리에 time이 들어가면 됨 (년, 월, 일)
+  # days는 서기 1년 1월 1일부터 해당 날짜(년, 월, 일)까지 모든 일수
+  mutate(
+    days = get_totalDays(year(submitDate), month(submitDate), day(submitDate))
+  ) -> matched_df2
+
+### 여기서부터 Treatment date를 0으로 만들어주는 과정
+### 0 기준 전후 비교를 하기 위함
+
+# Treatment date를 0으로 만들어주기 위해서는 days에서 treatment_days를 빼주면 됨
+# treatment_days는 서기 1년 1월 1일부터 Treatment Date (e.g., 2021-12-09)까지 모든 일수
+
+treatment_date <- ymd("2021-12-09")
+matched_df2 %>%
+  mutate(
+    treatment_days = get_totalDays(year(treatment_date), month(treatment_date), day(treatment_date)),
+    # 아래 코드가 바로 Treatment date를 0으로 만들어주는 과정
+    days = days-treatment_days
+  ) -> matched_df3
+
+# days가 잘 처리되었나 확인
+summary(matched_df3$days)
+
+matched_df3$days <- matched_df3$days -1
+
+```
+
+
+```{r 3. Get Day Dummies}
+
+### 여기서부터 2일평균, 3일평균 등등 과정으로 parallel trend를 보여주기 위해 변수를 만드는 과정
+
+matched_df3$day2 <- rep(0, length(matched_df3$days))
+matched_df3$day3 <- rep(0, length(matched_df3$days))
+matched_df3$day5 <- rep(0, length(matched_df3$days))
+matched_df3$day7 <- rep(0, length(matched_df3$days))
+matched_df3$day10 <- rep(0, length(matched_df3$days))
+matched_df3$day15 <- rep(0, length(matched_df3$days))
+matched_df3$day20 <- rep(0, length(matched_df3$days))
+matched_df3$day27 <- rep(0, length(matched_df3$days))
+matched_df3$day30 <- rep(0, length(matched_df3$days))
+matched_df3$day45 <- rep(0, length(matched_df3$days))
+
+
+for (i in 1:length(matched_df3$days)) {
+  
+  if (matched_df3$days[i] > 0) {
+    
+    # 2일 기준
+    if(i/2 > i%/%2) {
+      matched_df3$day2[i] <- matched_df3$days[i]%/%2+1
+    } else {
+      matched_df3$day2[i] <- matched_df3$days[i]%/%2
+    }
+    
+    # 3일 기준
+    if(i/3 > i%/%3) {
+      matched_df3$day3[i] <- matched_df3$days[i]%/%3+1
+    } else {
+      matched_df3$day3[i] <- matched_df3$days[i]%/%3
+    }
+    
+    # 5일 기준
+    if(i/5 > i%/%5) {
+      matched_df3$day5[i] <- matched_df3$days[i]%/%5+1
+    } else {
+      matched_df3$day5[i] <- matched_df3$days[i]%/%5
+    }
+    
+    # 7일 기준
+    if(i/7 > i%/%7) {
+      matched_df3$day7[i] <- matched_df3$days[i]%/%7+1
+    } else {
+      matched_df3$day7[i] <- matched_df3$days[i]%/%7
+    }
+    
+    # 10일 기준
+    if(i/10 > i%/%10) {
+      matched_df3$day10[i] <- matched_df3$days[i]%/%10+1
+    } else {
+      matched_df3$day10[i] <- matched_df3$days[i]%/%10
+    }
+    
+    # 15일 기준
+    if(i/15 > i%/%15) {
+      matched_df3$day15[i] <- matched_df3$days[i]%/%15+1
+    } else {
+      matched_df3$day15[i] <- matched_df3$days[i]%/%15
+    }
+    
+    # 20일 기준
+    if(i/20 > i%/%20) {
+      matched_df3$day20[i] <- matched_df3$days[i]%/%20+1
+    } else {
+      matched_df3$day20[i] <- matched_df3$days[i]%/%20
+    }
+    
+    # 27일 기준
+    if(i/27 > i%/%27) {
+      matched_df3$day27[i] <- matched_df3$days[i]%/%27+1
+    } else {
+      matched_df3$day27[i] <- matched_df3$days[i]%/%27
+    }
+    
+    # 30일 기준
+    if(i/30 > i%/%30) {
+      matched_df3$day30[i] <- matched_df3$days[i]%/%30+1
+    } else {
+      matched_df3$day30[i] <- matched_df3$days[i]%/%30
+    }
+    
+    # 45일 기준
+    if(i/45 > i%/%45) {
+      matched_df3$day45[i] <- matched_df3$days[i]%/%45+1
+    } else {
+      matched_df3$day45[i] <- matched_df3$days[i]%/%45
+    }
+
+  } 
+  
+  else if (matched_df3$days[i] < 0) {
+    
+    # 2일 기준
+    if(i/2 < i%/%2) {
+      matched_df3$day2[i] <- matched_df3$days[i]%/%2-1
+    } else {
+      matched_df3$day2[i] <- matched_df3$days[i]%/%2
+    }
+    
+    # 3일 기준
+    if(i/3 < i%/%3) {
+      matched_df3$day3[i] <- matched_df3$days[i]%/%3-1
+    } else {
+      matched_df3$day3[i] <- matched_df3$days[i]%/%3
+    }
+    
+    # 5일 기준
+    if(i/5 < i%/%5) {
+      matched_df3$day5[i] <- matched_df3$days[i]%/%5-1
+    } else {
+      matched_df3$day5[i] <- matched_df3$days[i]%/%5
+    }
+    
+    # 7일 기준
+    if(i/7 < i%/%7) {
+      matched_df3$day7[i] <- matched_df3$days[i]%/%7-1
+    } else {
+      matched_df3$day7[i] <- matched_df3$days[i]%/%7
+    }
+    
+    # 10일 기준
+    if(i/10 < i%/%10) {
+      matched_df3$day10[i] <- matched_df3$days[i]%/%10-1
+    } else {
+      matched_df3$day10[i] <- matched_df3$days[i]%/%10
+    }
+    
+    # 15일 기준
+    if(i/15 < i%/%15) {
+      matched_df3$day15[i] <- matched_df3$days[i]%/%15-1
+    } else {
+      matched_df3$day15[i] <- matched_df3$days[i]%/%15
+    }
+    
+    # 20일 기준
+    if(i/20 < i%/%20) {
+      matched_df3$day20[i] <- matched_df3$days[i]%/%20-1
+    } else {
+      matched_df3$day20[i] <- matched_df3$days[i]%/%20
+    }
+    
+    # 27일 기준
+    if(i/27 < i%/%27) {
+      matched_df3$day27[i] <- matched_df3$days[i]%/%27-1
+    } else {
+      matched_df3$day27[i] <- matched_df3$days[i]%/%27
+    }
+    
+    # 30일 기준
+    if(i/30 < i%/%30) {
+      matched_df3$day30[i] <- matched_df3$days[i]%/%30-1
+    } else {
+      matched_df3$day30[i] <- matched_df3$days[i]%/%30
+    }
+    
+    # 45일 기준
+    if(i/45 < i%/%45) {
+      matched_df3$day45[i] <- matched_df3$days[i]%/%45-1
+    } else {
+      matched_df3$day45[i] <- matched_df3$days[i]%/%45
+    }
+    
+  }
+  
+}
+
+
+
+matched_df3$day2 <- matched_df3$day2*2
+matched_df3$day3 <- matched_df3$day3*3
+matched_df3$day5 <- matched_df3$day5*5
+matched_df3$day7 <- matched_df3$day7*7
+matched_df3$day10 <- matched_df3$day10*10
+matched_df3$day15 <- matched_df3$day15*15
+matched_df3$day20 <- matched_df3$day20*20
+matched_df3$day27 <- matched_df3$day27*27
+matched_df3$day30 <- matched_df3$day30*30
+matched_df3$day45 <- matched_df3$day45*45
+
+  
+```
+
+```{r 3. Get Day Dummies}
+write_csv(matched_df3,"parallel_trends_data.csv")
+```
+
+```{r 3. Get Day Dummies}
+
+matched_df4 <- transform(matched_df3, LDailyBackerCnt = log(DailyBackerCnt + 1))
+
+show.plot = function(df,label="", show.means=TRUE) {
+  library(ggplot2)
+  gdat = df %>%
+    group_by(group, day2, awards_After, awards_Maker) %>%
+    summarize(y = mean(DailyBackerCnt))
+    
+  gg = ggplot(gdat, aes(y=y,x=day2, color= group)) +
+    geom_line() +
+    geom_vline(xintercept=0, linetype = 2) +
+    theme(legend.position=c(0.2,0.85), legend.title = element_blank()) +
+    theme_bw() +
+    theme(text = element_text(family = 'Times New Roman')) +
+    scale_x_continuous(breaks = seq(-20, 60, by=5)) +
+    annotate("text",x=0, y = 0.9*max(gdat$y), label=label) +
+    coord_cartesian(xlim=c(-20, 60), ylim=c(0, 60)) +
+    xlab("Days pre- and post- intervention") +
+    ylab("DailyBackerCnt")
+    
+  gg
+}
+
+
+matched_df4 %>%
+  filter(
+    Date >= ymd("2021-02-01")
+  ) %>%
+  filter(
+    Date < ymd("2022-03-31")
+  ) %>%
+  show.plot()
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

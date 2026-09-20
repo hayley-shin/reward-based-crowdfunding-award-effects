@@ -1,0 +1,414 @@
+---
+title: "Matching_DID_Code"
+output: html_document
+---
+
+```{r 1. Library & dataload}
+library(dplyr)
+library(lubridate)
+library(tidyverse)
+library(readr)
+library(MatchIt) # 매칭 함수
+library(plm)
+library(moonBook)
+library(ggplot2)
+library(fixest)
+library(haven)
+
+df <- read_csv("(Panel)Wadiz_df_v3.1.csv")
+```
+
+
+```{r 2. Logistic Regression}
+# matching covariates 선정을 위한 로지스틱 회귀분석
+mod <- glm(awards_Maker ~ maker_TotalFollowerCnt + maker_TotalProjectCnt + maker_MeanFacebookCnt + maker_MeanLikes + maker_MeanRewardPrice, family=binomial, data=df)
+summary(mod)
+```
+
+
+```{r 2.1 수상 여부에 따른 데이터의 특성 살펴보기}
+mytable(awards_Maker ~ ., data=df)
+```
+
+
+```{r 2.1 columns}
+colnames(df)
+```
+
+```{r 2. t-test before PSM}
+# Matching covariates
+# 변수명 넣기
+covariates <- c('maker_SatisfactionAverage', 'maker_TotalProjectCnt', 'maker_MeanAchievementRate100_21', 'maker_MeanCommunityCnt21', 'maker_MeanSupporterCnt21', 'maker_MeanBackedAmount21', 'maker_MeanNewsCnt21')
+
+# t-test: 각각의 covariates들에 대해서 treatment, control group간 차이 비교
+# 아마 매칭 전에는 대부분 p-value가 유사할 것임
+for(x in covariates){
+  y_vec <- df %>% select(awards_Maker) %>% pull()
+  x_vec <- df %>% select(!!!syms(x)) %>% pull()
+  print(x)
+  print(t.test(x_vec~y_vec))
+}
+
+```
+
+```{r 3. PSM Matching}
+# seed값 설정 -> 난수생성을 일정하게
+set.seed(1234)
+
+# 이게 Matching
+# 표준편차(caliper) 0.2 미만으로 match를 구성
+# 종속변수: istrt
+# 독립변수: matching covariates (var1, var2, var3, var4, var5)
+mod_match <- matchit(awards_Maker ~ maker_SatisfactionAverage + maker_TotalProjectCnt + maker_MeanAchievementRate100_21 + maker_MeanCommunityCnt21 + maker_MeanSupporterCnt21 + maker_MeanBackedAmount21 + maker_MeanNewsCnt21, method = "nearest", data = df, caliper=0.2, exact=NULL)
+summary(mod_match)
+
+matched_df <- match.data(mod_match)
+```
+
+```{r 4. t-test after PSM}
+# 유의하지 않아야 함 (p-value가 0.05 이상이면 두 집단에 차이가 없는 것)
+
+for(x in covariates){
+  y_vec <- matched_df %>% select(awards_Maker) %>% pull()
+  x_vec <- matched_df %>% select(!!!syms(x)) %>% pull()
+  print(x)
+  print(t.test(x_vec~y_vec))
+}
+```
+
+```{r 5. 혹시라도 잘 나오면 csv로 저장}
+write_csv(matched_df,"matched_1234_maker_SatisfactionAverage+maker_TotalProjectCnt+maker_MeanAchievementRate100_21+maker_MeanCommunityCnt21+maker_MeanSupporterCnt21+maker_MeanBackedAmount21+maker_MeanNewsCnt21_df.csv")
+```
+
+```{r 다시 데이터프레임 불러오기}
+matched_df <- read_csv("matched_1234_maker_SatisfactionAverage+maker_TotalProjectCnt+maker_MeanAchievementRate100_21+maker_MeanCommunityCnt21+maker_MeanSupporterCnt21+maker_MeanBackedAmount21+maker_MeanNewsCnt21_df.csv")
+```
+
+```{r 5. 패럴랠 어섬션을 위한 변수 생성}
+month_day <- c(31,28,31,30,31,30,31,31,30,31,30,31)
+
+get_weekDay <- function(month, day) {
+  total_day <- 0
+  
+  if (month >= 2) {
+    
+    for(i in 1:(month-1)) {
+    total_day <- total_day + month_day[i]
+    }  
+  }
+  
+  total_day <- total_day + day
+  
+  return(total_day)
+}
+
+
+matched_df$days <- rep(0, length(matched_df$maker_Id))
+matched_df$Date <- as.Date(matched_df$Date)
+matched_df$Date <- ymd(matched_df$Date)
+
+
+for (i in c(1:length(matched_df$maker_Id))) {
+  matched_df$days[i] <- get_weekDay(month(matched_df$Date[i]), day(matched_df$Date[i]))
+}
+
+
+matched_df$days <- matched_df$days - 120
+matched_df$days <- matched_df$days - 90
+
+matched_df$day1 <- rep(0, length(matched_df$days))
+matched_df$day2 <- rep(0, length(matched_df$days))
+matched_df$day3 <- rep(0, length(matched_df$days))
+matched_df$day5 <- rep(0, length(matched_df$days))
+matched_df$day7 <- rep(0, length(matched_df$days))
+matched_df$day10 <- rep(0, length(matched_df$days))
+matched_df$day15 <- rep(0, length(matched_df$days))
+matched_df$day20 <- rep(0, length(matched_df$days))
+matched_df$day27 <- rep(0, length(matched_df$days))
+matched_df$day30 <- rep(0, length(matched_df$days))
+matched_df$day45 <- rep(0, length(matched_df$days))
+
+
+for (i in 1:length(matched_df$days)) {
+  
+  if (matched_df$days[i] > 0) {
+    
+    # 1일 기준
+    if(i/1 > i%/%1) {
+      matched_df$day1[i] <- matched_df$days[i]%/%1+1
+    } else {
+      matched_df$day1[i] <- matched_df$days[i]%/%1
+    }
+    
+    # 2일 기준
+    if(i/2 > i%/%2) {
+      matched_df$day2[i] <- matched_df$days[i]%/%2+1
+    } else {
+      matched_df$day2[i] <- matched_df$days[i]%/%2
+    }
+    
+    # 3일 기준
+    if(i/3 > i%/%3) {
+      matched_df$day3[i] <- matched_df$days[i]%/%3+1
+    } else {
+      matched_df$day3[i] <- matched_df$days[i]%/%3
+    }
+    
+    # 5일 기준
+    if(i/5 > i%/%5) {
+      matched_df$day5[i] <- matched_df$days[i]%/%5+1
+    } else {
+      matched_df$day5[i] <- matched_df$days[i]%/%5
+    }
+    
+    # 7일 기준
+    if(i/7 > i%/%7) {
+      matched_df$day7[i] <- matched_df$days[i]%/%7+1
+    } else {
+      matched_df$day7[i] <- matched_df$days[i]%/%7
+    }
+    
+    # 10일 기준
+    if(i/10 > i%/%10) {
+      matched_df$day10[i] <- matched_df$days[i]%/%10+1
+    } else {
+      matched_df$day10[i] <- matched_df$days[i]%/%10
+    }
+    
+    # 15일 기준
+    if(i/15 > i%/%15) {
+      matched_df$day15[i] <- matched_df$days[i]%/%15+1
+    } else {
+      matched_df$day15[i] <- matched_df$days[i]%/%15
+    }
+    
+    # 20일 기준
+    if(i/20 > i%/%20) {
+      matched_df$day20[i] <- matched_df$days[i]%/%20+1
+    } else {
+      matched_df$day20[i] <- matched_df$days[i]%/%20
+    }
+    
+    # 27일 기준
+    if(i/27 > i%/%27) {
+      matched_df$day27[i] <- matched_df$days[i]%/%27+1
+    } else {
+      matched_df$day27[i] <- matched_df$days[i]%/%27
+    }
+    
+    # 30일 기준
+    if(i/30 > i%/%30) {
+      matched_df$day30[i] <- matched_df$days[i]%/%30+1
+    } else {
+      matched_df$day30[i] <- matched_df$days[i]%/%30
+    }
+    
+    # 45일 기준
+    if(i/45 > i%/%45) {
+      matched_df$day45[i] <- matched_df$days[i]%/%45+1
+    } else {
+      matched_df$day45[i] <- matched_df$days[i]%/%45
+    }
+
+  } 
+  
+  else if (matched_df$days[i] < 0) {
+    
+    # 1일 기준
+    if(i/1 < i%/%1) {
+      matched_df$day1[i] <- matched_df$days[i]%/%1-1
+    } else {
+      matched_df$day1[i] <- matched_df$days[i]%/%1
+    }
+    
+    # 2일 기준
+    if(i/2 < i%/%2) {
+      matched_df$day2[i] <- matched_df$days[i]%/%2-1
+    } else {
+      matched_df$day2[i] <- matched_df$days[i]%/%2
+    }
+    
+    # 3일 기준
+    if(i/3 < i%/%3) {
+      matched_df$day3[i] <- matched_df$days[i]%/%3-1
+    } else {
+      matched_df$day3[i] <- matched_df$days[i]%/%3
+    }
+    
+    # 5일 기준
+    if(i/5 < i%/%5) {
+      matched_df$day5[i] <- matched_df$days[i]%/%5-1
+    } else {
+      matched_df$day5[i] <- matched_df$days[i]%/%5
+    }
+    
+    # 7일 기준
+    if(i/7 < i%/%7) {
+      matched_df$day7[i] <- matched_df$days[i]%/%7-1
+    } else {
+      matched_df$day7[i] <- matched_df$days[i]%/%7
+    }
+    
+    # 10일 기준
+    if(i/10 < i%/%10) {
+      matched_df$day10[i] <- matched_df$days[i]%/%10-1
+    } else {
+      matched_df$day10[i] <- matched_df$days[i]%/%10
+    }
+    
+    # 15일 기준
+    if(i/15 < i%/%15) {
+      matched_df$day15[i] <- matched_df$days[i]%/%15-1
+    } else {
+      matched_df$day15[i] <- matched_df$days[i]%/%15
+    }
+    
+    # 20일 기준
+    if(i/20 < i%/%20) {
+      matched_df$day20[i] <- matched_df$days[i]%/%20-1
+    } else {
+      matched_df$day20[i] <- matched_df$days[i]%/%20
+    }
+    
+    # 27일 기준
+    if(i/27 < i%/%27) {
+      matched_df$day27[i] <- matched_df$days[i]%/%27-1
+    } else {
+      matched_df$day27[i] <- matched_df$days[i]%/%27
+    }
+    
+    # 30일 기준
+    if(i/30 < i%/%30) {
+      matched_df$day30[i] <- matched_df$days[i]%/%30-1
+    } else {
+      matched_df$day30[i] <- matched_df$days[i]%/%30
+    }
+    
+    # 45일 기준
+    if(i/45 < i%/%45) {
+      matched_df$day45[i] <- matched_df$days[i]%/%45-1
+    } else {
+      matched_df$day45[i] <- matched_df$days[i]%/%45
+    }
+    
+  }
+  
+}
+
+
+matched_df$day1 <- matched_df$day1*1
+matched_df$day2 <- matched_df$day2*2
+matched_df$day3 <- matched_df$day3*3
+matched_df$day5 <- matched_df$day5*5
+matched_df$day7 <- matched_df$day7*7
+matched_df$day10 <- matched_df$day10*10
+matched_df$day15 <- matched_df$day15*15
+matched_df$day20 <- matched_df$day20*20
+matched_df$day27 <- matched_df$day27*27
+matched_df$day30 <- matched_df$day30*30
+matched_df$day45 <- matched_df$day45*45
+
+
+matched_df %>%
+  mutate(
+    group = ifelse(awards_Maker == 1, "Treatment Entrepreneur", "Control Entrepreneur")
+  ) -> matched_df2
+
+```
+
+```{r 월별 더미변수 생성}
+matched_df2$Date <- as.Date(matched_df2$Date)
+matched_df2$Date <- ymd(matched_df2$Date)
+matched_df2$Month <- month(matched_df2$Date)
+
+matched_df2<-transform(matched_df2, 
+                       Month1 = ifelse(Month == 1, 1, 0),
+                       Month2 = ifelse(Month == 2, 1, 0),
+                       Month3 = ifelse(Month == 3, 1, 0),
+                       Month4 = ifelse(Month == 4, 1, 0),
+                       Month5 = ifelse(Month == 5, 1, 0),
+                       Month6 = ifelse(Month == 6, 1, 0),
+                       Month7 = ifelse(Month == 7, 1, 0),
+                       Month8 = ifelse(Month == 8, 1, 0),
+                       Month9 = ifelse(Month == 9, 1, 0),
+                       Month10 = ifelse(Month == 10, 1, 0),
+                       Month11 = ifelse(Month == 11, 1, 0),
+                       Month12 = ifelse(Month == 12, 1, 0))
+```
+
+```{r 5. csv로 저장}
+write_csv(matched_df2,"(+dayN)(+monthD)matched_1234_maker_SatisfactionAverage+maker_TotalProjectCnt+maker_MeanAchievementRate100_21+maker_MeanCommunityCnt21+maker_MeanSupporterCnt21+maker_MeanBackedAmount21+maker_MeanNewsCnt21_df.csv")
+```
+
+
+```{r 5. Parallel Trend Visualization}
+
+# 함수 만들기 전에 앞에서 몇가지 변수들을 만들어줘야 함
+# 1. 날짜 dummy (3일, 5일, 7일, 14일 등등)
+# Event 날짜를 0으로 둔다.
+
+# 2. group (istrt가 1이면 Treatment Group, 0이면 Control Group)
+
+# 아래 함수는 7일 평균 DV 값에 대해서 event 전후 treatment group, control group의 line_plot을 그려준다.
+show.plot = function(df,label="", show.means=TRUE) {
+  library(ggplot2)
+  gdat = df %>%
+    group_by(group, day30, awards_After, awards_Maker) %>%
+    summarize(y = mean(DailyBackerCnt))
+    
+  gg = ggplot(gdat, aes(y=y,x=day30, color= group)) +
+    geom_line() +
+    geom_vline(xintercept=0, linetype = 2) +
+    theme(legend.position=c(0.2,0.85), legend.title = element_blank()) +
+    theme_bw() +
+    theme(text = element_text(family = 'Times New Roman')) +
+    scale_x_continuous(breaks = seq(-25, 25, by=5)) +
+    annotate("text",x=0, y = 0.9*max(gdat$y), label=label) +
+    coord_cartesian(xlim=c(-25, 25), ylim=c(0, 50)) +
+    xlab("Days pre- and post- intervention") +
+    ylab("DailyBackerCnt")
+    
+  gg
+}
+
+
+show.plot(matched_df2)
+
+```
+
+
+
+```{r 6. DID}
+# t-test 통과하고 parallel까지 통과하면 그 때 DID 실행할 것.
+# 매칭을 다시해야 할 때
+# t-test 결과 모두 유의하게 나올 때, (1~2개 정도는 유의하게 나와도 되지만 전체가 다 유의하게 나오면 문제있음)
+
+# + Initial_0_25 + Middle_25_75 + awards_Maker*awards_After*Initial_0_25 + awards_Maker*awards_After*Middle_25_75
+
+# 매칭은 잘 나왔는데 parallel이 안된다면?
+# 이때는 요일 dummy를 3, 5, 7, 14, 15, 30 등등 여러개 만들어보면서 하나하나 parallel 잘 나올 때까지 그려보면 된다.
+
+matched_df2 %>%
+  plm(data=., index=c('maker_Id','Date'), model="within", effect = "individual", log(DailyBackerCnt+0.001) ~ 
+        # Main Effect
+        + awards_Maker + awards_After + awards_Maker*awards_After + Initial_0_25 + Middle_25_75 + awards_Maker*awards_After*Initial_0_25 + awards_Maker*awards_After*Middle_25_75
+        # Control variables
+        + log(maker_TotalFollowerCnt+0.001) + log(maker_SatisfactionAverage+0.001) + log(project_PeriodDays+0.001) + log(project_Likes+0.001) + log(project_RewardAvgPrice+0.001)
+        + Month1 + Month2 + Month3 + Month4 + Month5 + Month6 + Month7 + Month8 + Month9 + Month10 + Month11
+  ) -> model_res
+
+# 결과보기
+model_res %>%
+  summary()
+
+```
+
+```{r 7. DTA 파일로 저장}
+DTA_df <- read_csv("(+dayN)(+monthD)matched_1234_maker_SatisfactionAverage+maker_TotalProjectCnt+maker_MeanAchievementRate100_21+maker_MeanCommunityCnt21+maker_MeanSupporterCnt21+maker_MeanBackedAmount21+maker_MeanNewsCnt21_df.csv")
+library(writexl)
+write_xlsx(DTA_df, "matched_df_v1.0.xlsx")
+write_dta(DTA_df, "matched_df_v1.0.dta", version = 14)
+```
+
+
+
