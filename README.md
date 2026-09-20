@@ -18,7 +18,7 @@ This study examines whether this dynamic changes when uncertainty is reduced thr
 
 
 ## Data Collection
-I constructed a longitudinal dataset of reward-based crowdfunding campaigns on Wadiz, a major crowdfunding platform in South Korea, using Python.
+I constructed a panel dataset of reward-based crowdfunding campaigns on Wadiz, a major crowdfunding platform in South Korea, using Python.
 
 The data collection pipeline combined API requests and web scraping to link campaign and creator information across multiple sources, including campaign histories, campaign characteristics, engagement measures, and award information.
 
@@ -81,7 +81,6 @@ Overall, the findings suggest that observable quality signals can alter the
 temporal dynamics of backer participation by reducing uncertainty.
 
 
-## Research Outputs
+## Presentation
 
-- [Conference Submission – Workshop on e-Business (WeB) 2022](research_outputs/WeB2022_submission.pdf)
-- [Conference Presentation – Workshop on e-Business (WeB) 2022](research_outputs/WeB2022_presentation.pdf)
+[Workshop on e-Business (WeB) 2022 – Conference Presentation](research_outputs/WeB2022_presentation.pdf)
