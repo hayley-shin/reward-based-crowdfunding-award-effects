@@ -1,5 +1,4 @@
-# Is It Still a U-shape?
-## Empirical Study on the Dynamics of Reward-Based Crowdfunding with Award Effects
+# Is It Still a U-shape? Empirical Study on the Dynamics of Reward-Based Crowdfunding with Award Effects
 
 This project examines how platform awards, as observable quality signals, affect
 backer behavior and funding dynamics in reward-based crowdfunding.
